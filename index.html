@@ -311,13 +311,16 @@ a:hover{text-decoration:underline}
 </div>
 
 <script>
-// ======== INITIAL DATA ========
-let riders = [
+// ======== DATA (with localStorage support) ========
+const RIDERS_KEY = "israel_singles_riders";
+const TRAILS_KEY = "israel_singles_trails";
+
+const defaultRiders = [
   {id:"daniel",name:"דניאל",emoji:"ד"},
   {id:"alon",name:"אלון",emoji:"א"}
 ];
 
-let trails = [
+const defaultTrails = [
   // ---- NORTH ----
   {id:"t01",name:"סינגל נחל לימונים",region:"צפון",diff:"בינוני",km:20,elev:500,pop:"⭐⭐⭐⭐",notes:"שלוש לולאות ביער ביריה מעל צפת. נוף פנורמי. רכיבה נגד כיוון השעון.",link:"https://www.kkl.org.il/bike/trips/single-nahal-limonim/",rides:{daniel:{c:0,a:false},alon:{c:0,a:false}}},
   {id:"t02",name:"סינגל חניתה",region:"צפון",diff:"בינוני",km:22,elev:550,pop:"⭐⭐⭐⭐",notes:"סינגל ארוך וזורם ביער חניתה. קטעי אדרנלין נהדרים.",link:"https://www.kkl.org.il/bike/trips/single-hanita/",rides:{daniel:{c:0,a:false},alon:{c:0,a:false}}},
@@ -366,6 +369,45 @@ let trails = [
   {id:"t40",name:"סינגלים פארק תמנע",region:"דרום",diff:"בינוני",km:20,elev:450,pop:"⭐⭐⭐⭐",notes:"נוף מדברי ייחודי ליד אילת.",link:"https://www.kkl.org.il/bike/trips/single-timna/",rides:{daniel:{c:0,a:false},alon:{c:0,a:false}}}
 ];
 
+let riders = [];
+let trails = [];
+
+// Load from localStorage or use defaults
+function loadData() {
+  const savedRiders = localStorage.getItem(RIDERS_KEY);
+  const savedTrails = localStorage.getItem(TRAILS_KEY);
+
+  if (savedRiders) {
+    try { riders = JSON.parse(savedRiders); } catch(e) { riders = defaultRiders; }
+  } else {
+    riders = defaultRiders;
+  }
+
+  if (savedTrails) {
+    try { trails = JSON.parse(savedTrails); } catch(e) { trails = defaultTrails; }
+  } else {
+    trails = defaultTrails;
+  }
+
+  // Make sure new defaults are added if localstorage is outdated
+  if (trails.length < defaultTrails.length) {
+      const existingIds = trails.map(t => t.id);
+      defaultTrails.forEach(t => {
+          if (!existingIds.includes(t.id)) {
+              // add new trail with empty rides
+              const newT = {...t, rides: {}};
+              riders.forEach(r => newT.rides[r.id] = {c:0, a:false});
+              trails.push(newT);
+          }
+      });
+  }
+}
+
+function saveData() {
+  localStorage.setItem(RIDERS_KEY, JSON.stringify(riders));
+  localStorage.setItem(TRAILS_KEY, JSON.stringify(trails));
+}
+
 let activeRider = "all";
 let _mTid = null, _mRid = null, _mc = 1, _ma = false;
 let sortCol = null, sortDir = 1;
@@ -391,12 +433,34 @@ document.getElementById("riderTabs").addEventListener("click", e => {
   refresh();
 });
 
+function renderRiderTabs() {
+  const tabs = document.getElementById("riderTabs");
+  tabs.innerHTML = '<button class="rider-tab active" data-rider="all">כולם 👥</button>';
+  riders.forEach(r => {
+    const btn = document.createElement("button");
+    btn.className = "rider-tab";
+    btn.dataset.rider = r.id;
+    btn.textContent = r.name;
+    tabs.appendChild(btn);
+  });
+  // re-apply active state if needed
+  if(activeRider !== "all") {
+    const tab = tabs.querySelector(`[data-rider="${activeRider}"]`);
+    if(tab) {
+      tabs.querySelector(".active").classList.remove("active");
+      tab.classList.add("active");
+    } else {
+      activeRider = "all";
+    }
+  }
+}
+
 // ===== HELPERS =====
 const RORDER = ["צפון","כרמל ועמקים","שרון ומרכז","רמת הנדיב","ירושלים ויהודה","דרום"];
 const ro = r => {const i=RORDER.indexOf(r); return i>=0?i:99;};
-const dorder = d => ({קל:0,בינוני:1,קשה:2,מומחה:3}[d]??99);
-const dclass = d => ({קל:"de",בינוני:"dm",קשה:"dh",מומחה:"dx"}[d]??"");
-const demoji = d => ({קל:"🟢",בינוני:"🟡",קשה:"🔴",מומחה:"⚫"}[d]??"");
+const dorder = d => ({'קל':0,'בינוני':1,'קשה':2,'מומחה':3}[d]??99);
+const dclass = d => ({'קל':"de",'בינוני':"dm",'קשה':"dh",'מומחה':"dx"}[d]??"");
+const demoji = d => ({'קל':"🟢",'בינוני':"🟡",'קשה':"🔴",'מומחה':"⚫"}[d]??"");
 const remoji = r => ({"צפון":"🌿","כרמל ועמקים":"⛰️","שרון ומרכז":"🌾","רמת הנדיב":"🌺","ירושלים ויהודה":"🏔️","דרום":"☀️"}[r]??"📍");
 
 function isDone(t) {
@@ -448,7 +512,7 @@ function renderRiders() {
       <div class="rc-stats">
         <div class="rs"><div class="v">${done}</div><div class="l">✅ סינגלים</div></div>
         <div class="rs"><div class="v" style="color:var(--color-accent)">${tot-done}</div><div class="l">⏳ נותרו</div></div>
-        <div class="rs"><div class="v">${totalRides}</div><div class="l">🔄 סה"כ רכיבות</div></div>
+        <div class="rs"><div class="v">${totalRides}</div><div class="l">🔄 רכיבות</div></div>
         <div class="rs"><div class="v">${kmDone}</div><div class="l">📏 ק"מ</div></div>
       </div>
     </div>`;
@@ -459,52 +523,57 @@ function renderRiders() {
 function renderTable() {
   const tw = document.getElementById("tableWrap");
   const regions = [...new Set(trails.map(t=>t.region))].sort((a,b)=>ro(a)-ro(b));
-  let html = `<table class="trail-table"><thead><tr>
-    <th style="width:32px">✓</th>
-    <th>שם הסינגל</th>
-    <th class="hm">אזור</th>
-    <th class="sortable${sortCol==="diff"?" sorted":""}" onclick="sortBy('diff')">קושי ${sortCol==="diff"?(sortDir>0?"▲":"▼"):"↕"}</th>
-    <th class="sortable${sortCol==="km"?" sorted":""}" onclick="sortBy('km')">ק"מ ${sortCol==="km"?(sortDir>0?"▲":"▼"):"↕"}</th>
-    <th class="sortable hm${sortCol==="elev"?" sorted":""}" onclick="sortBy('elev')">עלייה מ' ${sortCol==="elev"?(sortDir>0?"▲":"▼"):"↕"}</th>
-    ${riders.map(r=>`<th>${r.name}</th>`).join("")}
-    <th class="hm">⭐</th>
-    <th class="notes-cell">הערות</th>
-    <th>קישור</th>
-  </tr></thead>`;
+
+  let html = '<table class="trail-table"><thead><tr>' +
+    '<th style="width:32px">✓</th>' +
+    '<th>שם הסינגל</th>' +
+    '<th class="hm">אזור</th>' +
+    '<th class="sortable' + (sortCol==="diff"?" sorted":"") + '" onclick="sortBy('diff')">קושי ' + (sortCol==="diff"?(sortDir>0?"▲":"▼"):"↕") + '</th>' +
+    '<th class="sortable' + (sortCol==="km"?" sorted":"") + '" onclick="sortBy('km')">ק"מ ' + (sortCol==="km"?(sortDir>0?"▲":"▼"):"↕") + '</th>' +
+    '<th class="sortable hm' + (sortCol==="elev"?" sorted":"") + '" onclick="sortBy('elev')">עלייה מ' ' + (sortCol==="elev"?(sortDir>0?"▲":"▼"):"↕") + '</th>';
+
+  riders.forEach(r => {
+      html += '<th>' + r.name + '</th>';
+  });
+
+  html += '<th class="hm">⭐</th><th class="notes-cell">הערות</th><th>קישור</th></tr></thead>';
 
   regions.forEach(region => {
     const rt = trails.filter(t=>t.region===region);
-    html += `<tbody class="rg" data-region="${region}">
-    <tr class="rg-hdr"><td colspan="100">${remoji(region)} <strong>${region}</strong> <span style="font-weight:400;opacity:.6">(${rt.length} מסלולים)</span></td></tr>`;
+    html += '<tbody class="rg" data-region="' + region + '">';
+    html += '<tr class="rg-hdr"><td colspan="100">' + remoji(region) + ' <strong>' + region + '</strong> <span style="font-weight:400;opacity:.6">(' + rt.length + ' מסלולים)</span></td></tr>';
+
     rt.forEach(t => {
       const done = isDone(t);
-      html += `<tr class="trail-row${done?" done-row":""}" data-id="${t.id}">
-        <td style="text-align:center">${done?'<span class="done-check">✓</span>':'<span class="not-done">—</span>'}</td>
-        <td><a href="${t.link}" target="_blank" rel="noopener" class="trail-name">${t.name}</a></td>
-        <td class="hm" style="font-size:var(--text-xs);color:var(--color-text-muted)">${remoji(t.region)} ${t.region}</td>
-        <td><span class="diff-badge ${dclass(t.diff)}">${demoji(t.diff)} ${t.diff}</span></td>
-        <td class="num-cell"><span class="km-val">${t.km}</span></td>
-        <td class="num-cell hm">${t.elev?t.elev.toLocaleString():"—"}</td>
-        ${riders.map(r=>{
-          const rd = t.rides[r.id]||{c:0,a:false};
-          if(rd.c>0) return `<td class="rider-cell"><div class="count-wrap">
-            <div class="count-controls">
-              <button class="count-btn" onclick="dec('${t.id}','${r.id}')">−</button>
-              <span class="count-val">${rd.c}</span>
-              <button class="count-btn" onclick="inc('${t.id}','${r.id}')">+</button>
-            </div>
-            <span class="bike-tag${rd.a?" analog":""}">${rd.a?"🚵 אנלוגי":"⚡ חשמלוק"}</span>
-          </div></td>`;
-          return `<td class="rider-cell"><button class="action-btn" onclick="openRideModal('${t.id}','${r.id}')">✓ בוצע</button></td>`;
-        }).join("")}
-        <td class="hm" style="font-size:var(--text-xs)">${t.pop||""}</td>
-        <td class="notes-cell">${t.notes||""}</td>
-        <td><a href="${t.link}" target="_blank" rel="noopener" class="kkl-link">🔗 קק"ל</a></td>
-      </tr>`;
+      html += '<tr class="trail-row' + (done?" done-row":"") + '" data-id="' + t.id + '">';
+      html += '<td style="text-align:center">' + (done?'<span class="done-check">✓</span>':'<span class="not-done">—</span>') + '</td>';
+      html += '<td><a href="' + t.link + '" target="_blank" rel="noopener" class="trail-name">' + t.name + '</a></td>';
+      html += '<td class="hm" style="font-size:var(--text-xs);color:var(--color-text-muted)">' + remoji(t.region) + ' ' + t.region + '</td>';
+      html += '<td><span class="diff-badge ' + dclass(t.diff) + '">' + demoji(t.diff) + ' ' + t.diff + '</span></td>';
+      html += '<td class="num-cell"><span class="km-val">' + t.km + '</span></td>';
+      html += '<td class="num-cell hm">' + (t.elev?t.elev.toLocaleString():"—") + '</td>';
+
+      riders.forEach(r => {
+        const rd = t.rides[r.id] || {c:0, a:false};
+        if(rd.c > 0) {
+            html += '<td class="rider-cell"><div class="count-wrap"><div class="count-controls">' +
+                    '<button class="count-btn" onclick="dec('' + t.id + '','' + r.id + '')">−</button>' +
+                    '<span class="count-val">' + rd.c + '</span>' +
+                    '<button class="count-btn" onclick="inc('' + t.id + '','' + r.id + '')">+</button>' +
+                    '</div><span class="bike-tag' + (rd.a?" analog":"") + '">' + (rd.a?"🚵 אנלוגי":"⚡ חשמלוק") + '</span></div></td>';
+        } else {
+            html += '<td class="rider-cell"><button class="action-btn" onclick="openRideModal('' + t.id + '','' + r.id + '')">✓ בוצע</button></td>';
+        }
+      });
+
+      html += '<td class="hm" style="font-size:var(--text-xs)">' + (t.pop||"") + '</td>';
+      html += '<td class="notes-cell">' + (t.notes||"") + '</td>';
+      html += '<td><a href="' + t.link + '" target="_blank" rel="noopener" class="kkl-link">🔗 קק"ל</a></td>';
+      html += '</tr>';
     });
-    html += `</tbody>`;
+    html += '</tbody>';
   });
-  html += `</table>`;
+  html += '</table>';
   tw.innerHTML = html;
   applyFilters();
 }
@@ -513,7 +582,7 @@ function renderTable() {
 function populateRegionSel() {
   const sel = document.getElementById("fRegion");
   const regions = [...new Set(trails.map(t=>t.region))].sort((a,b)=>ro(a)-ro(b));
-  sel.innerHTML = '<option value="">הכל</option>' + regions.map(r=>`<option value="${r}">${remoji(r)} ${r}</option>`).join("");
+  sel.innerHTML = '<option value="">הכל</option>' + regions.map(r=>'<option value="' + r + '">' + remoji(r) + ' ' + r + '</option>').join("");
 }
 
 function applyFilters() {
@@ -523,6 +592,7 @@ function applyFilters() {
   const st = document.getElementById("fStatus").value;
   const ln = document.getElementById("fLen").value;
   let vis = 0;
+
   document.querySelectorAll(".rg").forEach(grp => {
     let gv = 0;
     grp.querySelectorAll(".trail-row").forEach(row => {
@@ -537,6 +607,7 @@ function applyFilters() {
       if(ln==="s" && t.km>15) show=false;
       if(ln==="m" && (t.km<=15||t.km>30)) show=false;
       if(ln==="l" && t.km<=30) show=false;
+
       row.classList.toggle("hidden", !show);
       if(show){gv++;vis++;}
     });
@@ -546,46 +617,45 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  ["fSearch"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("fSearch").value="";
   ["fRegion","fDiff","fStatus","fLen"].forEach(id=>document.getElementById(id).selectedIndex=0);
   applyFilters();
 }
 
 // ===== RIDE ACTIONS =====
 function inc(tid,rid) {
-  const t=trails.find(x=>x.id===tid); if(!t) return;
+  const t = trails.find(x=>x.id===tid); if(!t) return;
   if(!t.rides[rid]) t.rides[rid]={c:0,a:false};
-  t.rides[rid].c++; refresh();
+  t.rides[rid].c++;
+  saveData();
+  refresh();
 }
 function dec(tid,rid) {
-  const t=trails.find(x=>x.id===tid); if(!t||!t.rides[rid]) return;
-  t.rides[rid].c=Math.max(0,t.rides[rid].c-1); refresh();
+  const t = trails.find(x=>x.id===tid); if(!t||!t.rides[rid]) return;
+  t.rides[rid].c = Math.max(0,t.rides[rid].c-1);
+  saveData();
+  refresh();
 }
 
 function openRideModal(tid,rid) {
-  const t=trails.find(x=>x.id===tid);
-  const r=riders.find(x=>x.id===rid);
+  const t = trails.find(x=>x.id===tid);
+  const r = riders.find(x=>x.id===rid);
   if(!t||!r) return;
   _mTid=tid; _mRid=rid; _mc=1; _ma=false;
   document.getElementById("rideTitle").textContent = r.name+" — "+t.name;
-  document.getElementById("rideBody").innerHTML = `
-    <p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">כמה פעמים רכבת במסלול הזה?</p>
-    <div class="cc">
-      <button class="cc-btn" onclick="_mc=Math.max(1,_mc-1);document.getElementById('mcv').textContent=_mc">−</button>
-      <span class="cc-val" id="mcv">1</span>
-      <button class="cc-btn" onclick="_mc++;document.getElementById('mcv').textContent=_mc">+</button>
-    </div>
-    <p style="font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-2)">🚲 סוג אופניים:</p>
-    <div class="bike-opts">
-      <div class="bike-opt selected" id="opt-e" onclick="_ma=false;document.getElementById('opt-e').classList.add('selected');document.getElementById('opt-a').classList.remove('selected')">
-        <span style="font-size:1.6em">⚡</span>
-        <div><div class="bike-opt-name">חשמלוק (E-Bike)</div><div class="bike-opt-sub">ברירת מחדל</div></div>
-      </div>
-      <div class="bike-opt" id="opt-a" onclick="_ma=true;document.getElementById('opt-a').classList.add('selected');document.getElementById('opt-e').classList.remove('selected')">
-        <span style="font-size:1.6em">🚵</span>
-        <div><div class="bike-opt-name">אנלוגי 💪</div><div class="bike-opt-sub">אופניים רגילים</div></div>
-      </div>
-    </div>`;
+
+  let mHTML = '<p style="font-size:var(--text-sm);color:var(--color-text-muted);margin-bottom:var(--space-3)">כמה פעמים רכבת במסלול הזה?</p>';
+  mHTML += '<div class="cc"><button class="cc-btn" onclick="_mc=Math.max(1,_mc-1);document.getElementById(\'mcv\').textContent=_mc">−</button>';
+  mHTML += '<span class="cc-val" id="mcv">1</span>';
+  mHTML += '<button class="cc-btn" onclick="_mc++;document.getElementById(\'mcv\').textContent=_mc">+</button></div>';
+  mHTML += '<p style="font-size:var(--text-sm);font-weight:600;margin-bottom:var(--space-2)">🚲 סוג אופניים:</p>';
+  mHTML += '<div class="bike-opts">';
+  mHTML += '<div class="bike-opt selected" id="opt-e" onclick="_ma=false;document.getElementById(\'opt-e\').classList.add(\'selected\');document.getElementById(\'opt-a\').classList.remove(\'selected\')">';
+  mHTML += '<span style="font-size:1.6em">⚡</span><div><div class="bike-opt-name">חשמלוק (E-Bike)</div><div class="bike-opt-sub">ברירת מחדל</div></div></div>';
+  mHTML += '<div class="bike-opt" id="opt-a" onclick="_ma=true;document.getElementById(\'opt-a\').classList.add(\'selected\');document.getElementById(\'opt-e\').classList.remove(\'selected\')">';
+  mHTML += '<span style="font-size:1.6em">🚵</span><div><div class="bike-opt-name">אנלוגי 💪</div><div class="bike-opt-sub">אופניים רגילים</div></div></div></div>';
+
+  document.getElementById("rideBody").innerHTML = mHTML;
   openModal("rideModal");
 }
 
@@ -593,7 +663,9 @@ function saveRide() {
   const t=trails.find(x=>x.id===_mTid); if(!t) return;
   if(!t.rides[_mRid]) t.rides[_mRid]={c:0,a:false};
   t.rides[_mRid].c=_mc; t.rides[_mRid].a=_ma;
-  closeModal("rideModal"); refresh();
+  saveData();
+  closeModal("rideModal");
+  refresh();
 }
 
 // ===== ADD TRAIL =====
@@ -612,8 +684,11 @@ function saveNewTrail() {
   };
   riders.forEach(r=>{nt.rides[r.id]={c:0,a:false};});
   trails.push(nt);
+  saveData();
   ["ntName","ntKm","ntElev","ntLink","ntNotes"].forEach(id=>document.getElementById(id).value="");
-  closeModal("trailModal"); populateRegionSel(); refresh();
+  closeModal("trailModal");
+  populateRegionSel();
+  refresh();
 }
 
 // ===== ADD RIDER =====
@@ -622,13 +697,12 @@ function saveNewRider() {
   if(!name){alert("יש להזין שם"); return;}
   const rid = "r"+Date.now();
   riders.push({id:rid,name,emoji:name[0].toUpperCase()});
-  trails.forEach(t=>{t.rides[rid]={c:0,a:false};});
+  trails.forEach(t=>{if(!t.rides[rid]) t.rides[rid]={c:0,a:false};});
   document.getElementById("nrName").value="";
-  const tabs=document.getElementById("riderTabs");
-  const btn=document.createElement("button");
-  btn.className="rider-tab"; btn.dataset.rider=rid; btn.textContent=name;
-  tabs.insertBefore(btn, tabs.lastElementChild);
-  closeModal("riderModal"); refresh();
+  saveData();
+  renderRiderTabs();
+  closeModal("riderModal");
+  refresh();
 }
 
 // ===== SORT =====
@@ -653,7 +727,15 @@ document.addEventListener("keydown",e=>{
 });
 
 // ===== INIT =====
-function refresh(){renderSummary();renderRiders();renderTable();}
+function refresh() {
+  renderSummary();
+  renderRiders();
+  renderTable();
+}
+
+// Start
+loadData();
+renderRiderTabs();
 populateRegionSel();
 refresh();
 </script>
