@@ -190,6 +190,7 @@ a:hover{text-decoration:underline}
     </div>
     <button class="btn-sec" onclick="openModal('riderModal')">+ רוכב חדש</button>
     <button class="theme-btn" id="themeBtn" aria-label="החלף מצב">🌙</button>
+    <div id="syncStatus" style="font-size:var(--text-xs);font-weight:600;color:var(--color-text-muted);display:flex;align-items:center;min-width:90px;justify-content:flex-end;">⏳ נטען...</div>
   </div>
 </header>
 
@@ -311,8 +312,11 @@ a:hover{text-decoration:underline}
 </div>
 
 <script>
-const RIDERS_KEY = "israel_singles_riders";
-const TRAILS_KEY = "israel_singles_trails";
+
+const API_URL = "https://jsonbin-zeta.vercel.app/api/bins/m17XzhCCkG";
+let riders = [];
+let trails = [];
+let isSyncing = false;
 
 const defaultRiders = [
   {id:"daniel",name:"דניאל",emoji:"ד"},
@@ -362,40 +366,66 @@ const defaultTrails = [
   {id:"t40",name:"סינגלים פארק תמנע",region:"דרום",diff:"בינוני",km:20,elev:450,pop:"⭐⭐⭐⭐",notes:"נוף מדברי ייחודי ליד אילת.",link:"https://www.kkl.org.il/bike/trips/single-timna/",rides:{daniel:{c:0,a:false},alon:{c:0,a:false}}}
 ];
 
-let riders = [];
-let trails = [];
-
-function loadData() {
-  const savedRiders = localStorage.getItem(RIDERS_KEY);
-  const savedTrails = localStorage.getItem(TRAILS_KEY);
-
-  if (savedRiders) {
-    try { riders = JSON.parse(savedRiders); } catch(e) { riders = defaultRiders; }
-  } else {
-    riders = defaultRiders;
-  }
-
-  if (savedTrails) {
-    try { trails = JSON.parse(savedTrails); } catch(e) { trails = defaultTrails; }
-  } else {
-    trails = defaultTrails;
-  }
-
-  if (trails.length < defaultTrails.length) {
-      const existingIds = trails.map(t => t.id);
-      defaultTrails.forEach(t => {
-          if (!existingIds.includes(t.id)) {
-              const newT = {...t, rides: {}};
-              riders.forEach(r => newT.rides[r.id] = {c:0, a:false});
-              trails.push(newT);
-          }
-      });
-  }
+// Show sync indicator
+function setSyncing(state) {
+    isSyncing = state;
+    document.getElementById("syncStatus").textContent = state ? "⏳ מסנכרן עם הענן..." : "✅ מסונכרן";
+    document.getElementById("syncStatus").style.color = state ? "var(--color-accent)" : "var(--color-text-muted)";
 }
 
-function saveData() {
-  localStorage.setItem(RIDERS_KEY, JSON.stringify(riders));
-  localStorage.setItem(TRAILS_KEY, JSON.stringify(trails));
+async function loadData() {
+    setSyncing(true);
+    try {
+        const res = await fetch(API_URL);
+        const json = await res.json();
+
+        if (json && json.riders && json.trails && json.riders !== "default") {
+            riders = json.riders;
+            trails = json.trails;
+        } else {
+            // It's empty or initial state, use defaults and save them to cloud
+            riders = defaultRiders;
+            trails = defaultTrails;
+            await saveData();
+        }
+    } catch (e) {
+        console.error("Cloud load failed, falling back to local defaults", e);
+        riders = defaultRiders;
+        trails = defaultTrails;
+        document.getElementById("syncStatus").textContent = "⚠️ אין חיבור לענן (מצב לא מקוון)";
+        document.getElementById("syncStatus").style.color = "var(--color-error)";
+    }
+
+    // Ensure all trails have rides object for all riders
+    const existingIds = trails.map(t => t.id);
+    defaultTrails.forEach(t => {
+        if (!existingIds.includes(t.id)) {
+            const newT = {...t, rides: {}};
+            riders.forEach(r => newT.rides[r.id] = {c:0, a:false});
+            trails.push(newT);
+        }
+    });
+
+    setSyncing(false);
+    renderRiderTabs();
+    populateRegionSel();
+    refresh();
+}
+
+async function saveData() {
+    setSyncing(true);
+    try {
+        await fetch(API_URL, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ riders: riders, trails: trails })
+        });
+        setSyncing(false);
+    } catch (e) {
+        console.error("Cloud save failed", e);
+        document.getElementById("syncStatus").textContent = "⚠️ שגיאה בשמירה לענן";
+        document.getElementById("syncStatus").style.color = "var(--color-error)";
+    }
 }
 
 let activeRider = "all";
@@ -604,19 +634,21 @@ function resetFilters() {
   applyFilters();
 }
 
-function inc(tid,rid) {
+async function inc(tid,rid) {
+  if (isSyncing) return;
   const t = trails.find(x=>x.id===tid); if(!t) return;
   if(!t.rides[rid]) t.rides[rid]={c:0,a:false};
   t.rides[rid].c++;
-  saveData();
-  refresh();
+  refresh(); // Instant UI update
+  await saveData();
 }
 
-function dec(tid,rid) {
+async function dec(tid,rid) {
+  if (isSyncing) return;
   const t = trails.find(x=>x.id===tid); if(!t||!t.rides[rid]) return;
   t.rides[rid].c = Math.max(0,t.rides[rid].c-1);
-  saveData();
   refresh();
+  await saveData();
 }
 
 function openRideModal(tid,rid) {
@@ -641,16 +673,18 @@ function openRideModal(tid,rid) {
   openModal("rideModal");
 }
 
-function saveRide() {
+async function saveRide() {
+  if (isSyncing) return;
   const t=trails.find(x=>x.id===_mTid); if(!t) return;
   if(!t.rides[_mRid]) t.rides[_mRid]={c:0,a:false};
   t.rides[_mRid].c=_mc; t.rides[_mRid].a=_ma;
-  saveData();
   closeModal("rideModal");
   refresh();
+  await saveData();
 }
 
-function saveNewTrail() {
+async function saveNewTrail() {
+  if (isSyncing) return;
   const name = document.getElementById("ntName").value.trim();
   if(!name){alert("יש להזין שם"); return;}
   const nt = {
@@ -665,24 +699,25 @@ function saveNewTrail() {
   };
   riders.forEach(r=>{nt.rides[r.id]={c:0,a:false};});
   trails.push(nt);
-  saveData();
   ["ntName","ntKm","ntElev","ntLink","ntNotes"].forEach(id=>document.getElementById(id).value="");
   closeModal("trailModal");
   populateRegionSel();
   refresh();
+  await saveData();
 }
 
-function saveNewRider() {
+async function saveNewRider() {
+  if (isSyncing) return;
   const name = document.getElementById("nrName").value.trim();
   if(!name){alert("יש להזין שם"); return;}
   const rid = "r"+Date.now();
   riders.push({id:rid,name,emoji:name[0].toUpperCase()});
   trails.forEach(t=>{if(!t.rides[rid]) t.rides[rid]={c:0,a:false};});
   document.getElementById("nrName").value="";
-  saveData();
   renderRiderTabs();
   closeModal("riderModal");
   refresh();
+  await saveData();
 }
 
 function sortBy(col) {
@@ -710,10 +745,9 @@ function refresh() {
   renderTable();
 }
 
+// Initialize
 loadData();
-renderRiderTabs();
-populateRegionSel();
-refresh();
+
 </script>
 </body>
 </html>
