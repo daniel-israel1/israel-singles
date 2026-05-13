@@ -747,6 +747,93 @@ function refresh() {
 
 // Initialize
 loadData();
+  // === PATCHED FUNCTIONS ===
+function renderRiderTabs() {
+  const tabs = document.getElementById('riderTabs');
+  tabs.innerHTML = '<button class="rider-tab active" data-rider="all">כולם 👥</button>';
+  riders.forEach(r => {
+    const wrap = document.createElement('span');
+    wrap.style.cssText = 'display:inline-flex;align-items:center;gap:2px';
+    const btn = document.createElement('button');
+    btn.className = 'rider-tab';
+    btn.dataset.rider = r.id;
+    btn.textContent = r.name;
+    const del = document.createElement('button');
+    del.textContent = '×';
+    del.title = 'הסר רוכב';
+    del.style.cssText = 'font-size:11px;padding:0 4px;border-radius:50%;border:1px solid var(--color-border);background:var(--color-surface-offset);color:var(--color-text-muted);cursor:pointer;line-height:16px;margin-right:2px';
+    del.onclick = (e) => { e.stopPropagation(); removeRider(r.id); };
+    wrap.appendChild(btn);
+    wrap.appendChild(del);
+    tabs.appendChild(wrap);
+  });
+  if (activeRider !== 'all') {
+    const tab = tabs.querySelector('[data-rider="' + activeRider + '"]');
+    if (tab) { tabs.querySelector('.active').classList.remove('active'); tab.classList.add('active'); }
+    else { activeRider = 'all'; }
+  }
+}
+function renderRiders() {
+  const el = document.getElementById('riderCards');
+  const list = activeRider === 'all' ? riders : riders.filter(r => r.id === activeRider);
+  el.innerHTML = list.map(r => {
+    const done = trails.filter(t=>(t.rides[r.id]?.c||0)>0).length;
+    const tot = trails.length;
+    const pct = tot ? Math.round(done/tot*100) : 0;
+    const totalRides = trails.reduce((s,t)=>s+(t.rides[r.id]?.c||0),0);
+    const kmDone = Math.round(trails.filter(t=>(t.rides[r.id]?.c||0)>0).reduce((s,t)=>s+(t.km||0),0));
+    return '<div class="rc"><div class="rc-header"><div class="rc-avatar">' + r.emoji + '</div><div><div class="rc-name">' + r.name + (pct===100?' 🏆':pct>=50?' 🔥':'') + '</div><div style="font-size:var(--text-xs);color:var(--color-text-muted)">' + pct + '% (' + done + '/' + tot + ' סינגלים)</div></div></div><div class="progress-bar" style="margin-bottom:var(--space-4)"><div class="progress-fill" style="width:' + pct + '%"></div></div><div class="rc-stats"><div class="rs"><div class="v">' + done + '</div><div class="l">✅ סינגלים</div></div><div class="rs"><div class="v" style="color:var(--color-accent)">' + (tot-done) + '</div><div class="l">⏳ נותרו</div></div><div class="rs"><div class="v">' + totalRides + '</div><div class="l">🔄 רכיבות</div></div><div class="rs"><div class="v">' + kmDone + '</div><div class="l">📏 ק"מ</div></div></div></div>';
+  }).join('');
+}
+function renderTable() {
+  const tw = document.getElementById('tableWrap');
+  const activeRiders = activeRider === 'all' ? riders : riders.filter(r => r.id === activeRider);
+  const regions = [...new Set(trails.map(t=>t.region))].sort((a,b)=>ro(a)-ro(b));
+  let html = '<table class="trail-table"><thead><tr><th style="width:32px">✓</th><th>שם הסינגל</th><th class="hm">אזור</th><th class="sortable' + (sortCol==="diff"?' sorted':'') + '" onclick="sortBy(\'diff\')">קושי ' + (sortCol==="diff"?(sortDir>0?'\u25b2':'\u25bc'):'\u2195') + '</th><th class="sortable' + (sortCol==="km"?' sorted':'') + '" onclick="sortBy(\'km\')">ק"מ ' + (sortCol==="km"?(sortDir>0?'\u25b2':'\u25bc'):'\u2195') + '</th><th class="sortable hm' + (sortCol==="elev"?' sorted':'') + '" onclick="sortBy(\'elev\')">עלייה מ\' ' + (sortCol==="elev"?(sortDir>0?'\u25b2':'\u25bc'):'\u2195') + '</th>';
+  activeRiders.forEach(r => { html += '<th>' + r.name + '</th>'; });
+  html += '<th class="hm">⭐</th><th class="notes-cell">הערות</th><th>קישור</th></tr></thead>';
+  regions.forEach(region => {
+    const rt = trails.filter(t=>t.region===region);
+    html += '<tbody class="rg" data-region="' + region + '">';
+    html += '<tr class="rg-hdr"><td colspan="100">' + remoji(region) + ' <strong>' + region + '</strong> <span style="font-weight:400;opacity:.6">(' + rt.length + ' מסלולים)</span></td></tr>';
+    rt.forEach(t => {
+      const done = isDone(t);
+      html += '<tr class="trail-row' + (done?' done-row':'') + '" data-id="' + t.id + '">';
+      html += '<td style="text-align:center">' + (done?'<span class="done-check">✓</span>':'<span class="not-done">—</span>') + '</td>';
+      html += '<td><a href="' + t.link + '" target="_blank" rel="noopener" class="trail-name">' + t.name + '</a></td>';
+      html += '<td class="hm" style="font-size:var(--text-xs);color:var(--color-text-muted)">' + remoji(t.region) + ' ' + t.region + '</td>';
+      html += '<td><span class="diff-badge ' + dclass(t.diff) + '">' + demoji(t.diff) + ' ' + t.diff + '</span></td>';
+      html += '<td class="num-cell"><span class="km-val">' + t.km + '</span></td>';
+      html += '<td class="num-cell hm">' + (t.elev?t.elev.toLocaleString():'—') + '</td>';
+      activeRiders.forEach(r => {
+        const rd = t.rides[r.id] || {c:0,a:false};
+        if (rd.c > 0) {
+          html += '<td class="rider-cell"><div class="count-wrap"><div class="count-controls"><button class="count-btn" onclick="dec(\'' + t.id + '\',\'' + r.id + '\')">-</button><span class="count-val">' + rd.c + '</span><button class="count-btn" onclick="inc(\'' + t.id + '\',\'' + r.id + '\')">+</button></div><span class="bike-tag' + (rd.a?' analog':'') + '">' + (rd.a?'🚵 אנלוגי':'⚡ חשמלוק') + '</span></div></td>';
+        } else {
+          html += '<td class="rider-cell"><button class="action-btn" onclick="openRideModal(\'' + t.id + '\',\'' + r.id + '\')">\u2713 בוצע</button></td>';
+        }
+      });
+      html += '<td class="hm" style="font-size:var(--text-xs)">' + (t.pop||'') + '</td>';
+      html += '<td class="notes-cell">' + (t.notes||'') + '</td>';
+      html += '<td><a href="' + t.link + '" target="_blank" rel="noopener" class="kkl-link">🔗 קק"ל</a></td>';
+      html += '</tr>';
+    });
+    html += '</tbody>';
+  });
+  html += '</table>';
+  tw.innerHTML = html;
+  applyFilters();
+}
+async function removeRider(rid) {
+  if (riders.length <= 1) { alert('לא ניתן להסיר את הרוכב האחרון!'); return; }
+  if (!confirm('למחוק את הרוכב ואת כל הנתונים שלו/שלה?')) return;
+  riders = riders.filter(r => r.id !== rid);
+  if (activeRider === rid) activeRider = 'all';
+  await saveData();
+  renderRiderTabs();
+  renderRiders();
+  renderTable();
+}
 
 </script>
 </body>
