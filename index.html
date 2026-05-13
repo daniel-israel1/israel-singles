@@ -374,59 +374,68 @@ function setSyncing(state) {
 }
 
 async function loadData() {
-    setSyncing(true);
-    try {
-        const res = await fetch(API_URL);
-        const json = await res.json();
+  setSyncing(true);
+  try {
+    const res = await fetch(API_URL);
 
-        if (json && json.riders && json.trails && json.riders !== "default") {
-            riders = json.riders;
-            trails = json.trails;
-        } else {
-            // It's empty or initial state, use defaults and save them to cloud
-            riders = defaultRiders;
-            trails = defaultTrails;
-            await saveData();
-        }
-    } catch (e) {
-        console.error("Cloud load failed, falling back to local defaults", e);
-        riders = defaultRiders;
-        trails = defaultTrails;
-        document.getElementById("syncStatus").textContent = "⚠️ אין חיבור לענן (מצב לא מקוון)";
-        document.getElementById("syncStatus").style.color = "var(--color-error)";
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
     }
 
-    // Ensure all trails have rides object for all riders
-    const existingIds = trails.map(t => t.id);
-    defaultTrails.forEach(t => {
-        if (!existingIds.includes(t.id)) {
-            const newT = {...t, rides: {}};
-            riders.forEach(r => newT.rides[r.id] = {c:0, a:false});
-            trails.push(newT);
-        }
-    });
+    const json = await res.json();
 
-    setSyncing(false);
-    renderRiderTabs();
-    populateRegionSel();
-    refresh();
-}
+    if (json && json.riders && json.trails && json.riders !== "default") {
+      riders = json.riders;
+      trails = json.trails;
+    } else {
+      riders = defaultRiders;
+      trails = defaultTrails;
+      await saveData();
+    }
+  } catch (e) {
+    console.error("Cloud load failed, falling back to local defaults", e);
+    riders = defaultRiders;
+    trails = defaultTrails;
+    document.getElementById("syncStatus").textContent = "⚠️ אין חיבור לענן (מצב לא מקוון)";
+    document.getElementById("syncStatus").style.color = "var(--color-hard)";
+  }
+
+  const existingIds = trails.map(t => t.id);
+  defaultTrails.forEach(t => {
+    if (!existingIds.includes(t.id)) {
+      const newT = { ...t, rides: {} };
+      riders.forEach(r => newT.rides[r.id] = { c: 0, a: false });
+      trails.push(newT);
+    }
+  });
+
+  setSyncing(false);
+  renderRiderTabs();
+  populateRegionSel();
+  refresh();
+}  
 
 async function saveData() {
-    setSyncing(true);
-    try {
-        await fetch(API_URL, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ riders: riders, trails: trails })
-        });
-        setSyncing(false);
-    } catch (e) {
-        console.error("Cloud save failed", e);
-        document.getElementById("syncStatus").textContent = "⚠️ שגיאה בשמירה לענן";
-        document.getElementById("syncStatus").style.color = "var(--color-error)";
+  setSyncing(true);
+  try {
+    const res = await fetch(API_URL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ riders, trails })
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status} ${res.statusText} ${text}`.trim());
     }
-}
+
+    setSyncing(false);
+  } catch (e) {
+    console.error("Cloud save failed", e);
+    document.getElementById("syncStatus").textContent = "⚠️ שגיאה בשמירה לענן";
+    document.getElementById("syncStatus").style.color = "var(--color-hard)";
+  }
+}  
 
 let activeRider = "all";
 let _mTid = null, _mRid = null, _mc = 1, _ma = false;
